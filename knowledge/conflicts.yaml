@@ -1,0 +1,6 @@
+# Pairs of cards that disagree, with the resolution rule the orchestrator applies.
+- cards: [imbalanced.modeling.resampling-pitfalls, "(future) practitioner card recommending SMOTE"]
+  status: future
+  resolution: "Prefer class weights + threshold tuning for tree models. Use SMOTE only if the user asks and only inside the training fold."
+- cards: [modeling.tabular.gbm-default, credit.modeling.monotonic-explainable]
+  resolution: "In regulated credit, interpretability constraints (monotone GBM or scorecard logistic) override raw performance."

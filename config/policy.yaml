@@ -1,0 +1,65 @@
+# Model/effort routing policy, read by `dsx route`. See docs/MODEL-POLICY.md.
+# Ladders are tried in order; `max_attempts` counts all rungs. Haiku uses budget_tokens (no effort).
+version: 1
+defaults: {max_attempts: 3, cache_ttl: 5m, max_effort: high}      # xhigh only via explicit escalation rungs below
+main_thread: {model: sonnet, effort: medium}
+
+call_points:
+  analyst.detect:        {ladder: [{model: haiku, budget_tokens: 2000}, {model: sonnet, effort: low}], max_attempts: 2,
+                          triggers: [schema_invalid, confidence_below: 0.7]}
+  analyst.prefill:       {ladder: [{model: haiku, budget_tokens: 2000}, {model: sonnet, effort: medium}], max_attempts: 2,
+                          triggers: [validate_fail_x2]}
+  must_ask.draft:        {ladder: [{model: haiku, budget_tokens: 2000}]}
+  gaps.propose:          {ladder: [{model: haiku, budget_tokens: 2000}, {model: sonnet, effort: low}], max_attempts: 2,
+                          triggers: [schema_invalid], max_per_expert: 8,
+                          experts: {stage1: [analyst], stage2: [data-expert, analyst], stage3: [developer, evaluator], stage4: [developer, writer]}}
+  technical.contribute:  {ladder: [{model: sonnet, effort: low}, {model: sonnet, effort: medium}], max_contributors: 3, cost_cap_usd: 0.10,
+                          contributors: {stage2: [reviewer, analyst], stage3: [evaluator, reviewer], stage4: [writer, reviewer]}}
+  plan.consult:          {ladder: [{model: haiku, budget_tokens: 2000}], max_consulted: 2, per_expert_max_items: 2,
+                          stage3: {ladder: [{model: sonnet, effort: low}]}}
+  technical.draft:
+    stage2: {ladder: [{model: opus, effort: medium}, {model: opus, effort: high}], silent: true,
+             triggers: [validate_fail_x2, user_revise]}
+    stage3: {ladder: [{model: opus, effort: high}, {model: opus, effort: xhigh}], silent: true,
+             triggers: [validate_fail_x2, user_revise],
+             persona: {senior: [{model: opus, effort: medium}, {model: opus, effort: high}]}}
+    stage4: {ladder: [{model: sonnet, effort: medium}, {model: opus, effort: medium}], triggers: [validate_fail_x2]}
+  plan:
+    stage2: {ladder: [{model: haiku, budget_tokens: 2000}, {model: sonnet, effort: low}], triggers: [hypothesis_non_numeric_x2]}
+    stage3: {ladder: [{model: sonnet, effort: low}, {model: sonnet, effort: medium}], triggers: [validate_fail_x2]}
+    stage4: {ladder: [{model: haiku, budget_tokens: 2000}, {model: sonnet, effort: low}], triggers: [hypothesis_non_numeric_x2]}
+  developer.build:
+    parametrized:        {ladder: [{model: haiku, budget_tokens: 4000}, {model: sonnet, effort: medium}], max_attempts: 4,
+                          triggers: [tests_fail_x2], applies_to: [stage2.plan1, stage4.plan2]}
+    standard:            {ladder: [{model: sonnet, effort: medium}, {model: opus, effort: medium}, {model: opus, effort: high}], max_attempts: 4,
+                          triggers: [tests_fail_x2],
+                          family: {forecasting: {stage3: [{model: sonnet, effort: high}, {model: opus, effort: medium}, {model: opus, effort: high}]}}}
+    oracle:              {ladder: [{model: opus, effort: medium}, {model: opus, effort: high}], max_attempts: 4, silent: true,
+                          triggers: [mutation_fail, tests_fail_x2],
+                          applies_to: [features.v1, tests.test_point_in_time, experiment.backtest, evaluate.translate],
+                          downgrade_when: {mutation_catch_rate: 1.0, runs: 9, to: [{model: sonnet, effort: high}]}}
+  reviewer.tests:        {engine: dsx}                                   # no model runs pytest
+  reviewer.advisory:     {ladder: [{model: haiku, budget_tokens: 1000}, {model: sonnet, effort: medium}, {model: sonnet, effort: high}],
+                          triggers: [card_flag, contradicts_test]}
+  interpretation:
+    stage2: {ladder: [{model: sonnet, effort: medium}, {model: opus, effort: medium}], triggers: [fields_missing, done_with_unmet_dod]}
+    stage3: {ladder: [{model: opus, effort: medium}, {model: opus, effort: high}], silent: true,
+             engine_precomputes: [beats_by_gt_noise], triggers: [fields_missing, done_with_unmet_dod],
+             downgrade_when: {shadow_verdict_agreement: 0.95, runs: 45, to: [{model: sonnet, effort: medium}]}}
+    stage4: {ladder: [{model: sonnet, effort: medium}, {model: opus, effort: medium}], triggers: [fields_missing, done_with_unmet_dod]}
+  evaluator.exit:        {ladder: [{model: opus, effort: medium}, {model: opus, effort: high}], max_attempts: 2, silent: true,
+                          triggers: [user_revise],                       # never direction-based (a wrong "go" is the silent failure)
+                          downgrade_when: {shadow_business_metric_within_tol: true, worst_segment_agreement: 1.0, runs: 9, to: [{model: sonnet, effort: high}]}}
+  writer.render:         {ladder: [{model: haiku, budget_tokens: 1000}, {model: sonnet, effort: low}], triggers: [user_revise_x2],
+                          persona: {business: {at_gate: [{model: sonnet, effort: low}]}}}
+  curator.draft:         {ladder: [{model: sonnet, effort: medium}, {model: opus, effort: medium}], triggers: [conflict_detected]}
+  revalidate.propose:    {ladder: [{model: haiku, budget_tokens: 1000}], may_output: [rerun_candidates], never: [still_valid]}   # v2
+
+telemetry:
+  file: .dsx/telemetry.jsonl
+  fields: [ts, project, stage, iteration, call_point, attempt, agent, model, effort, budget_tokens, input_tokens, cache_read, cache_write,
+           output_tokens, cost_usd, latency_s, outcome, escalated_from, policy_version]
+tune:
+  loud_downgrade:   {first_try_success_min: 0.85, runs_min: 9}
+  silent_downgrade: {mutation_catch_rate: 1.0, shadow_disagreement: 0, toys_min: 3, runs_per_toy_min: 3}
+  promote_when:     {escalation_rate_over: 0.30}

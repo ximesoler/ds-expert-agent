@@ -1,0 +1,17 @@
+# id: feature_inventory · produced by Data · consumed by Experiment and Ship
+version: 1
+content_hash:
+point_in_time_rule: "<what 'known at scoring time' means; lead time from project §1>"
+columns:
+  - name:
+    source_table:
+    meaning:
+    dtype:
+    available_at_inference: yes      # yes | no | lagged
+    earliest_lag:                     # when lagged
+    leakage_risk: none                # none | suspect | confirmed
+    evidence:
+    excluded: false                   # from project §4 excluded variables
+    proxy_of:                         # excluded variable this column proxies, if any
+    candidate_signal:
+    notes:

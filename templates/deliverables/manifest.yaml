@@ -1,0 +1,18 @@
+# Written by `dsx gate approve <stage>`; never edited by hand.
+stage:
+gate_passed_on:
+approver: {persona: , decision: approve}
+pinned_inputs:
+  project_functional: {version: , sections: {}}
+  deliverables: {}                 # id: content_hash
+  data_hash:
+  env_lock_hash:
+cards_set_hash:
+dod:
+  - id:
+    result: PASS                   # PASS | FAIL | N/A
+    enforced_by: test              # test | reviewer | user
+    evidence_path:
+    sha256:
+accepted_stale: []                 # [{node, note, by, on}]
+snapshot:
